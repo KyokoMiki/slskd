@@ -913,7 +913,7 @@ namespace slskd
                     foreach (var group in groups)
                     {
                         var username = group.Key;
-                        var files = group.Select(f => (f.Filename, f.Size));
+                        var files = group.Select(f => (f.Filename, f.Size, (string)null));
 
                         try
                         {

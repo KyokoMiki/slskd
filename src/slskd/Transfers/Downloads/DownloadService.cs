@@ -59,7 +59,7 @@ namespace slskd.Transfers.Downloads
         /// <exception cref="ArgumentException">Thrown when the username is null or an empty string.</exception>
         /// <exception cref="ArgumentException">Thrown when no files are requested.</exception>
         /// <exception cref="AggregateException">Thrown when at least one of the requested files throws.</exception>
-        Task EnqueueAsync(string username, IEnumerable<(string Filename, long Size)> files);
+        Task EnqueueAsync(string username, IEnumerable<(string Filename, long Size, string Path)> files);
 
         /// <summary>
         ///     Finds a single download matching the specified <paramref name="expression"/>.
@@ -136,6 +136,7 @@ namespace slskd.Transfers.Downloads
         }
 
         private ConcurrentDictionary<Guid, CancellationTokenSource> CancellationTokens { get; } = new ConcurrentDictionary<Guid, CancellationTokenSource>();
+        private ConcurrentDictionary<Guid, string> CustomPaths { get; } = new ConcurrentDictionary<Guid, string>();
         private ISoulseekClient Client { get; }
         private IDbContextFactory<TransfersDbContext> ContextFactory { get; }
         private IFTPService FTP { get; }
@@ -184,7 +185,7 @@ namespace slskd.Transfers.Downloads
         /// <exception cref="ArgumentException">Thrown when the username is null or an empty string.</exception>
         /// <exception cref="ArgumentException">Thrown when no files are requested.</exception>
         /// <exception cref="AggregateException">Thrown when at least one of the requested files throws.</exception>
-        public Task EnqueueAsync(string username, IEnumerable<(string Filename, long Size)> files)
+        public Task EnqueueAsync(string username, IEnumerable<(string Filename, long Size, string Path)> files)
         {
             if (string.IsNullOrEmpty(username))
             {
@@ -198,7 +199,7 @@ namespace slskd.Transfers.Downloads
 
             return EnqueueAsyncInternal(username, files);
 
-            async Task EnqueueAsyncInternal(string username, IEnumerable<(string Filename, long Size)> files)
+            async Task EnqueueAsyncInternal(string username, IEnumerable<(string Filename, long Size, string Path)> files)
             {
                 try
                 {
@@ -226,6 +227,11 @@ namespace slskd.Transfers.Downloads
                             StartOffset = 0,
                             RequestedAt = DateTime.UtcNow,
                         };
+
+                        if (!string.IsNullOrEmpty(file.Path))
+                        {
+                            CustomPaths.TryAdd(id, file.Path);
+                        }
 
                         // persist the transfer to the database so we have a record that it was attempted
                         AddOrSupersede(transfer);
@@ -294,7 +300,7 @@ namespace slskd.Transfers.Downloads
                                     remoteFilename: file.Filename,
                                     outputStreamFactory: () => Task.FromResult(
                                         Files.CreateFile(
-                                            filename: file.Filename.ToLocalFilename(baseDirectory: OptionsMonitor.CurrentValue.Directories.Incomplete),
+                                            filename: file.Filename.ToLocalFilename(baseDirectory: OptionsMonitor.CurrentValue.Directories.Incomplete, relativePath: CustomPaths.GetValueOrDefault(id)),
                                             options: new CreateFileOptions
                                             {
                                                 Access = System.IO.FileAccess.Write,
@@ -319,10 +325,11 @@ namespace slskd.Transfers.Downloads
                                 // todo: broadcast to signalr hub
                                 SynchronizedUpdate(transfer, cancellable: false);
 
-                                var destinationDirectory = System.IO.Path.GetDirectoryName(file.Filename.ToLocalFilename(baseDirectory: OptionsMonitor.CurrentValue.Directories.Downloads));
+                                var customRelativePath = CustomPaths.GetValueOrDefault(id);
+                                var destinationDirectory = System.IO.Path.GetDirectoryName(file.Filename.ToLocalFilename(baseDirectory: OptionsMonitor.CurrentValue.Directories.Downloads, relativePath: customRelativePath));
 
                                 var finalFilename = Files.MoveFile(
-                                    sourceFilename: file.Filename.ToLocalFilename(baseDirectory: OptionsMonitor.CurrentValue.Directories.Incomplete),
+                                    sourceFilename: file.Filename.ToLocalFilename(baseDirectory: OptionsMonitor.CurrentValue.Directories.Incomplete, relativePath: customRelativePath),
                                     destinationDirectory: destinationDirectory,
                                     overwrite: false,
                                     deleteSourceDirectoryIfEmptyAfterMove: true);
@@ -396,6 +403,7 @@ namespace slskd.Transfers.Downloads
                             finally
                             {
                                 CancellationTokens.TryRemove(id, out _);
+                                CustomPaths.TryRemove(id, out _);
                             }
                         });
 
