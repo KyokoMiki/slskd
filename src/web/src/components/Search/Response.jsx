@@ -31,6 +31,7 @@ class Response extends Component {
       downloadRequest: undefined,
       fetchingDirectoryContents: false,
       isFolded: this.props.isInitiallyFolded,
+      recursiveDownload: undefined,
       tree: buildTree(this.props.response),
     };
   }
@@ -127,6 +128,48 @@ class Response extends Component {
     }
   };
 
+  downloadRecursively = async (username, directory) => {
+    this.setState({ recursiveDownload: directory });
+
+    try {
+      const allDirectories = await getDirectoryContents({
+        directory,
+        username,
+      });
+
+      if (!allDirectories || allDirectories.length === 0) {
+        throw new Error('No directories were included in the response');
+      }
+
+      const separator =
+        directory.includes('/') && !directory.includes('\\') ? '/' : '\\';
+      const parent = directory.split(separator).slice(0, -1).join(separator);
+
+      for (const d of allDirectories.filter(
+        (candidate) => (candidate.files || []).length > 0,
+      )) {
+        const destination = d.name
+          .slice(parent.length > 0 ? parent.length + 1 : 0)
+          .split(separator)
+          .join('/');
+        const files = d.files.map((f) => ({
+          filename: `${d.name}${separator}${f.filename}`,
+          size: f.size,
+        }));
+
+        // eslint-disable-next-line no-await-in-loop
+        await transfers.downloadBatch({ destination, files, username });
+      }
+
+      toast.success(`Downloading ${directory}`);
+    } catch (error) {
+      console.error(error);
+      toast.error(error?.response?.data ?? error?.message ?? error);
+    } finally {
+      this.setState({ recursiveDownload: undefined });
+    }
+  };
+
   handleToggleFolded = () => {
     this.setState((previousState) => ({ isFolded: !previousState.isFolded }));
   };
@@ -140,6 +183,7 @@ class Response extends Component {
       downloadRequest,
       fetchingDirectoryContents,
       isFolded,
+      recursiveDownload,
       tree,
     } = this.state;
 
@@ -186,6 +230,7 @@ class Response extends Component {
             <FileList
               directoryName={directory}
               disabled={downloadRequest === 'inProgress'}
+              downloadingRecursively={recursiveDownload === directory}
               files={tree[directory]}
               footer={
                 <button
@@ -210,6 +255,9 @@ class Response extends Component {
               }
               key={directory}
               locked={tree[directory].find((file) => file.locked)}
+              onDownloadRecursively={() =>
+                this.downloadRecursively(response.username, directory)
+              }
               onSelectionChange={this.handleFileSelectionChange}
             />
           ))}

@@ -8,7 +8,7 @@ import DirectoryTree from './DirectoryTree';
 import * as lzString from 'lz-string';
 import React, { Component } from 'react';
 import { withRouter } from 'react-router-dom';
-import { Button, Card, Icon, Input, Loader, Segment } from 'semantic-ui-react';
+import { Card, Icon, Input, Loader, Segment } from 'semantic-ui-react';
 
 const initialState = {
   browseError: undefined,
@@ -377,32 +377,24 @@ class Browse extends Component {
                           tree={tree}
                         />
                       </Segment>
-                      {name && (
-                        <Button
-                          color="green"
-                          content="Download Folder"
-                          disabled={downloadRequest === 'inProgress'}
-                          icon="download"
-                          loading={downloadRequest === 'inProgress'}
-                          onClick={() =>
-                            this.handleDownloadFolder(
-                              username,
-                              separator,
-                              selectedDirectory,
-                            )
-                          }
-                        />
-                      )}
                     </Card.Content>
                   </Card>
                 )}
                 {name && (
                   <Directory
+                    downloadingRecursively={downloadRequest === 'inProgress'}
                     files={files}
                     locked={locked}
                     marginTop={-20}
                     name={name}
                     onClose={this.handleDeselectDirectory}
+                    onDownloadRecursively={() =>
+                      this.handleDownloadFolder(
+                        username,
+                        separator,
+                        selectedDirectory,
+                      )
+                    }
                     username={username}
                   />
                 )}
