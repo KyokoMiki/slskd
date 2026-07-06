@@ -24,8 +24,9 @@ jobs:
 
       - name: Set Environment Variables
         run: |
-          echo "TAG=0.25.1" >> $GITHUB_ENV
-          echo "VERSION=0.25.1.65534+$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          TAG=$(git ls-remote --tags https://github.com/slskd/slskd.git | awk -F/ '{print $NF}' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+          echo "TAG=$TAG" >> $GITHUB_ENV
+          echo "VERSION=$TAG.65534+$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Web
         run: ./bin/build --web-only --skip-tests --version ${{ env.VERSION }}
@@ -62,7 +63,8 @@ jobs:
 
       - name: Set Environment Variables
         run: |
-          echo "VERSION=0.25.1.65534+$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          TAG=$(git ls-remote --tags https://github.com/slskd/slskd.git | awk -F/ '{print $NF}' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+          echo "VERSION=$TAG.65534+$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Download Static Web Content
         uses: actions/download-artifact@v4
@@ -95,9 +97,10 @@ jobs:
       # docker tags aren't compatible with semver, therefore + can't be used to delimit the version and SHA
       - name: Set Environment Variables
         run: |
-          echo "TAG=0.25.1" >> $GITHUB_ENV
-          echo "CONTAINER_VERSION=0.25.1.65534-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
-          echo "APP_VERSION=0.25.1.65534+$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          TAG=$(git ls-remote --tags https://github.com/slskd/slskd.git | awk -F/ '{print $NF}' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+          echo "TAG=$TAG" >> $GITHUB_ENV
+          echo "CONTAINER_VERSION=$TAG.65534-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          echo "APP_VERSION=$TAG.65534+$(git rev-parse --short HEAD)" >> $GITHUB_ENV
           echo "REVISION=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
           echo "BUILD_DATE=$(date --iso-8601=s)" >> $GITHUB_ENV
           echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
