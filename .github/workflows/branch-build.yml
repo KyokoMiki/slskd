@@ -24,7 +24,8 @@ jobs:
 
       - name: Set Environment Variables
         run: |
-          echo "VERSION=$(git describe --tags --abbrev=0).65534+$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          echo "TAG=0.25.1" >> $GITHUB_ENV
+          echo "VERSION=0.25.1.65534+$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Web
         run: ./bin/build --web-only --skip-tests
@@ -61,7 +62,7 @@ jobs:
 
       - name: Set Environment Variables
         run: |
-          echo "VERSION=$(git describe --tags --abbrev=0).65534+$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          echo "VERSION=0.25.1.65534+$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Download Static Web Content
         uses: actions/download-artifact@v4
@@ -94,9 +95,9 @@ jobs:
       # docker tags aren't compatible with semver, therefore + can't be used to delimit the version and SHA
       - name: Set Environment Variables
         run: |
-          echo "TAG=$(git describe --tags --abbrev=0)" >> $GITHUB_ENV
-          echo "CONTAINER_VERSION=$(git describe --tags --abbrev=0).65534-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
-          echo "APP_VERSION=$(git describe --tags --abbrev=0).65534+$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          echo "TAG=0.25.1" >> $GITHUB_ENV
+          echo "CONTAINER_VERSION=0.25.1.65534-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          echo "APP_VERSION=0.25.1.65534+$(git rev-parse --short HEAD)" >> $GITHUB_ENV
           echo "REVISION=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
           echo "BUILD_DATE=$(date --iso-8601=s)" >> $GITHUB_ENV
           echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
