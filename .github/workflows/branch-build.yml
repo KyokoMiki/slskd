@@ -1,0 +1,191 @@
+name: Branch Build
+on:
+  push:
+    branches: [ pr2 ]
+  workflow_dispatch:
+
+env:
+  DOTNET_VERSION: '10'
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Set Environment Variables
+        run: |
+          TAG=$(git ls-remote --tags https://github.com/slskd/slskd.git | awk -F/ '{print $NF}' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+          echo "TAG=$TAG" >> $GITHUB_ENV
+          echo "VERSION=$TAG+$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
+      - name: Web
+        run: ./bin/build --web-only --skip-tests --version ${{ env.VERSION }}
+
+      - name: Dotnet
+        run: ./bin/build --dotnet-only --skip-tests --version ${{ env.VERSION }}
+
+      - name: Upload Static Web Content
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-${{ env.VERSION }}
+          path: src/web/build
+
+  publish:
+    name: Publish
+    runs-on: ubuntu-latest
+    needs: build
+    strategy:
+      matrix:
+        runtime:
+          - "win-x64"
+          - "win-arm64"
+          - "linux-x64"
+          - "linux-arm"
+          - "linux-arm64"
+          - "linux-musl-x64"
+          - "linux-musl-arm"
+          - "linux-musl-arm64"
+          - "osx-x64"
+          - "osx-arm64"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Set Environment Variables
+        run: |
+          TAG=$(git ls-remote --tags https://github.com/slskd/slskd.git | awk -F/ '{print $NF}' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+          echo "VERSION=$TAG+$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
+      - name: Download Static Web Content
+        uses: actions/download-artifact@v4
+        with:
+          name: web-${{ env.VERSION }}
+          path: src/slskd/wwwroot
+
+      - name: Build ${{ matrix.runtime }}
+        run: bin/publish --no-prebuild --runtime ${{ matrix.runtime }} --version ${{ env.VERSION }}
+
+      - name: Upload Binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: slskd-${{ env.VERSION }}-${{ matrix.runtime }}
+          path: dist/${{ matrix.runtime }}
+
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: publish
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set Environment Variables
+        run: |
+          TAG=$(git ls-remote --tags https://github.com/slskd/slskd.git | awk -F/ '{print $NF}' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+          echo "TAG=$TAG" >> $GITHUB_ENV
+          echo "VERSION=$TAG+$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          echo "RELEASE_TAG=$TAG-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
+      - name: Download Binaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: slskd-${{ env.VERSION }}-*
+          path: dist
+
+      - name: Zip Binaries
+        run: |
+          cd dist
+          for dir in slskd-*; do
+            runtime=$(echo "$dir" | sed "s/^slskd-.*+[0-9a-f]*-//")
+            cd "$dir"
+            if [ -f "slskd" ]; then
+              chmod +x slskd
+            fi
+            zip -r "../../slskd-${{ env.RELEASE_TAG }}-$runtime.zip" .
+            cd ..
+          done
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: slskd ${{ env.RELEASE_TAG }}
+          prerelease: true
+          files: |
+            slskd-*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  docker:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # docker tags aren't compatible with semver, therefore + can't be used to delimit the version and SHA
+      - name: Set Environment Variables
+        run: |
+          TAG=$(git ls-remote --tags https://github.com/slskd/slskd.git | awk -F/ '{print $NF}' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+          echo "TAG=$TAG" >> $GITHUB_ENV
+          echo "CONTAINER_VERSION=$TAG-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          echo "APP_VERSION=$TAG+$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          echo "REVISION=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          echo "BUILD_DATE=$(date --iso-8601=s)" >> $GITHUB_ENV
+          echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            TAG=${{ env.TAG }}
+            VERSION=${{ env.APP_VERSION }}
+            REVISION=${{ env.REVISION }}
+            BUILD_DATE=${{ env.BUILD_DATE }}
+          tags: |
+            ${{ env.IMAGE }}:${{ env.CONTAINER_VERSION }}
+            ${{ env.IMAGE }}:canary
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
