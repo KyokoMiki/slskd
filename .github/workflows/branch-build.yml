@@ -28,7 +28,7 @@ jobs:
           echo "VERSION=0.25.1.65534+$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Web
-        run: ./bin/build --web-only --skip-tests
+        run: ./bin/build --web-only --skip-tests --version ${{ env.VERSION }}
 
       - name: Dotnet
         run: ./bin/build --dotnet-only --skip-tests --version ${{ env.VERSION }}
